@@ -87,3 +87,7 @@ beads_*/
 beads-web-linux-*
 beads-web-win-*
 beads-web-darwin-*
+
+# Beads / Dolt files (added by bd init)
+*.db
+.beads-credential-key

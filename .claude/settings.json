@@ -1,157 +1,185 @@
 {
   "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/enforce-concise-response.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Task"
+      },
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/memory-capture.sh",
+            "timeout": 10,
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": "node .claude/hooks/memory-capture.cjs",
+            "timeout": 10,
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "command": "node .claude/hooks/nudge-claude-md-update.cjs",
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "bd prime",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ],
     "PreToolUse": [
       {
         "hooks": [
           {
-            "type": "command",
-            "command": ".claude/hooks/block-orchestrator-tools.sh"
+            "command": ".claude/hooks/block-orchestrator-tools.sh",
+            "type": "command"
           }
         ]
       },
       {
-        "matcher": "Task",
         "hooks": [
           {
-            "type": "command",
-            "command": ".claude/hooks/enforce-bead-for-supervisor.sh"
+            "command": ".claude/hooks/enforce-bead-for-supervisor.sh",
+            "type": "command"
           },
           {
-            "type": "command",
-            "command": ".claude/hooks/enforce-sequential-dispatch.sh"
+            "command": ".claude/hooks/enforce-sequential-dispatch.sh",
+            "type": "command"
           },
           {
-            "type": "command",
-            "command": ".claude/hooks/remind-inprogress.sh"
+            "command": ".claude/hooks/remind-inprogress.sh",
+            "type": "command"
           },
           {
-            "type": "command",
-            "command": ".claude/hooks/inject-discipline-reminder.sh"
+            "command": ".claude/hooks/inject-discipline-reminder.sh",
+            "type": "command"
           },
           {
-            "type": "command",
-            "command": ".claude/hooks/inject-memory-recall.sh"
+            "command": ".claude/hooks/inject-memory-recall.sh",
+            "type": "command"
           }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": ".claude/hooks/validate-epic-close.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": ".claude/hooks/enforce-branch-before-edit.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": ".claude/hooks/enforce-branch-before-edit.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node .claude/hooks/enforce-branch-before-edit.cjs"
-          }
-        ]
-      },
-      {
-        "matcher": "Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node .claude/hooks/enforce-branch-before-edit.cjs"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node .claude/hooks/bash-guard.cjs"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": ".claude/hooks/enforce-concise-response.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": ".claude/hooks/memory-capture.sh",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node .claude/hooks/memory-capture.cjs",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": ".claude/hooks/validate-completion.sh"
-          }
-        ]
+        ],
+        "matcher": "Task"
       },
       {
         "hooks": [
           {
-            "type": "command",
-            "command": "node .claude/hooks/validate-completion.cjs"
+            "command": ".claude/hooks/validate-epic-close.sh",
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/enforce-branch-before-edit.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Edit"
+      },
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/enforce-branch-before-edit.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Write"
+      },
+      {
+        "hooks": [
+          {
+            "command": "node .claude/hooks/enforce-branch-before-edit.cjs",
+            "type": "command"
+          }
+        ],
+        "matcher": "Edit"
+      },
+      {
+        "hooks": [
+          {
+            "command": "node .claude/hooks/enforce-branch-before-edit.cjs",
+            "type": "command"
+          }
+        ],
+        "matcher": "Write"
+      },
+      {
+        "hooks": [
+          {
+            "command": "node .claude/hooks/bash-guard.cjs",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
       }
     ],
     "SessionStart": [
       {
         "hooks": [
           {
-            "type": "command",
-            "command": ".claude/hooks/session-start.sh"
+            "command": ".claude/hooks/session-start.sh",
+            "type": "command"
           }
         ]
       },
       {
         "hooks": [
           {
-            "type": "command",
-            "command": "node .claude/hooks/session-start.cjs"
+            "command": "node .claude/hooks/session-start.cjs",
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "bd prime",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/validate-completion.sh",
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "node .claude/hooks/validate-completion.cjs",
+            "type": "command"
           }
         ]
       }
@@ -160,18 +188,8 @@
       {
         "hooks": [
           {
-            "type": "command",
-            "command": ".claude/hooks/clarify-vague-request.sh"
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node .claude/hooks/nudge-claude-md-update.cjs"
+            "command": ".claude/hooks/clarify-vague-request.sh",
+            "type": "command"
           }
         ]
       }

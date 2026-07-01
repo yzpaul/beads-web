@@ -4,6 +4,17 @@ import { useMemo, useRef, useState, useCallback, useEffect } from "react";
 
 import { useSearchParams, useRouter } from "next/navigation";
 
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  KeyboardSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragStartEvent,
+  type DragEndEvent,
+} from "@dnd-kit/core";
 import { ArrowLeft, EllipsisVertical } from "lucide-react";
 
 import { ActivityTimeline } from "@/components/activity-timeline";
@@ -33,9 +44,12 @@ import { useGitHubStatus } from "@/hooks/use-github-status";
 import { useKeyboardNavigation } from "@/hooks/use-keyboard-navigation";
 import { useProject } from "@/hooks/use-project";
 import { useTheme } from "@/hooks/use-theme";
+import { toast } from "@/hooks/use-toast";
 import { useWorktreeStatuses } from "@/hooks/use-worktree-statuses";
-import { isBlocked } from "@/lib/bead-utils";
+import * as api from "@/lib/api";
+import { formatBeadId, isBlocked } from "@/lib/bead-utils";
 import { getUnknownStatusBeads, getUnknownStatusNames } from "@/lib/beads-parser";
+import { updateStatus as cliUpdateStatus } from "@/lib/cli";
 import { isDoltProject } from "@/lib/utils";
 import type { Bead, BeadStatus } from "@/types";
 
@@ -78,6 +92,7 @@ export default function KanbanBoard() {
     isLoading: beadsLoading,
     error: beadsError,
     refresh: refreshBeads,
+    updateBeadStatus,
   } = useBeads(project?.path ?? "");
 
   // Use the bead filters hook with 300ms debounce
@@ -196,6 +211,52 @@ export default function KanbanBoard() {
    */
   const unknownStatusBeads = useMemo(() => getUnknownStatusBeads(beads), [beads]);
   const unknownStatusNames = useMemo(() => getUnknownStatusNames(beads), [beads]);
+
+  // ─── Drag-and-drop (kanban status updates) ───
+
+  // Bead currently being dragged, rendered in the DragOverlay
+  const [activeDragBead, setActiveDragBead] = useState<Bead | null>(null);
+
+  // Distance threshold keeps plain clicks (open detail panel) from starting a drag
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor)
+  );
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    const bead = beads.find(b => b.id === event.active.id);
+    setActiveDragBead(bead ?? null);
+  }, [beads]);
+
+  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
+    setActiveDragBead(null);
+
+    const { active, over } = event;
+    if (!over || !project?.path) return;
+
+    const newStatus = over.id as BeadStatus;
+    const bead = beads.find(b => b.id === active.id);
+    if (!bead || bead.status === newStatus) return;
+
+    const previousStatus = bead.status;
+
+    // Move the card immediately — the bd CLI / Dolt round trip can take a
+    // second, and waiting for it makes the card look like it snapped back
+    // to the old column before jumping to the right one.
+    updateBeadStatus(bead.id, newStatus);
+
+    try {
+      if (isDolt) {
+        await api.beads.update({ path: project.path, id: bead.id, status: newStatus });
+      } else {
+        await cliUpdateStatus(bead.id, newStatus, project.path);
+      }
+      refreshBeads();
+    } catch (err) {
+      updateBeadStatus(bead.id, previousStatus);
+      toast({ variant: "destructive", title: "Failed to update status", description: err instanceof Error ? err.message : "Unknown error" });
+    }
+  }, [beads, project?.path, isDolt, refreshBeads, updateBeadStatus]);
 
   // Detail panel state
   const {
@@ -369,24 +430,41 @@ export default function KanbanBoard() {
             <div role="alert" className="text-danger">Error loading beads: {beadsError.message}</div>
           </div>
         ) : (
-          <div className="grid grid-cols-4 h-full" style={{ gap: 'var(--column-gap)' }}>
-            {COLUMNS.map(({ status, title }) => (
-              <KanbanColumn
-                key={status}
-                status={status}
-                title={title}
-                beads={filteredBeadsByStatus[status] || []}
-                allBeads={beads}
-                selectedBeadId={selectedId}
-                ticketNumbers={ticketNumbers}
-                onSelectBead={openBead}
-                onChildClick={openBead}
-                onNavigateToDependency={navigateToBead}
-                projectPath={project?.path}
-                onUpdate={refreshBeads}
-              />
-            ))}
-          </div>
+          <DndContext
+            sensors={dndSensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+          >
+            <div className="grid grid-cols-4 h-full" style={{ gap: 'var(--column-gap)' }}>
+              {COLUMNS.map(({ status, title }) => (
+                <KanbanColumn
+                  key={status}
+                  status={status}
+                  title={title}
+                  beads={filteredBeadsByStatus[status] || []}
+                  allBeads={beads}
+                  selectedBeadId={selectedId}
+                  ticketNumbers={ticketNumbers}
+                  onSelectBead={openBead}
+                  onChildClick={openBead}
+                  onNavigateToDependency={navigateToBead}
+                  projectPath={project?.path}
+                  onUpdate={refreshBeads}
+                />
+              ))}
+            </div>
+            <DragOverlay>
+              {activeDragBead && (
+                <div className="theme-card bg-card border border-border shadow-lg rounded-md p-3 cursor-grabbing rotate-1 opacity-95">
+                  <div className="text-xs font-mono text-muted-foreground mb-1">
+                    {formatBeadId(activeDragBead.id)}
+                  </div>
+                  <div className="font-semibold text-sm">{activeDragBead.title}</div>
+                </div>
+              )}
+            </DragOverlay>
+          </DndContext>
         )}
       </main>
 

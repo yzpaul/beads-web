@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, memo } from "react";
 
 import { CheckCircle2, ChevronDown, ChevronRight, Layers, Loader2, MessageSquare } from "lucide-react";
 
@@ -66,7 +66,13 @@ const PR_STATUS_REFRESH_INTERVAL = 30_000;
  * Larger epic card with distinctive styling
  */
 
-export function EpicCard({
+/**
+ * Memoized: during a kanban drag, @dnd-kit/core's context updates on every
+ * pointer move and re-renders every useDraggable/useDroppable consumer in
+ * the tree. EpicCard is the most expensive card (progress calc, child list,
+ * PR status effects), so without memo it's the biggest source of drag lag.
+ */
+function EpicCardComponent({
   epic,
   allBeads,
   ticketNumber,
@@ -434,3 +440,5 @@ export function EpicCard({
     </div>
   );
 }
+
+export const EpicCard = memo(EpicCardComponent);

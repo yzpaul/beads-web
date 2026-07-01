@@ -34,6 +34,8 @@ export interface UseBeadsResult {
   error: Error | null;
   /** Manually refresh beads from the file */
   refresh: () => Promise<void>;
+  /** Optimistically update a bead's status in local state ahead of the backend write */
+  updateBeadStatus: (beadId: string, status: BeadStatus) => void;
 }
 
 /**
@@ -170,6 +172,21 @@ export function useBeads(projectPath: string): UseBeadsResult {
     await loadBeads();
   }, [loadBeads]);
 
+  /**
+   * Optimistically update a bead's status in local state, ahead of the
+   * backend write completing. Without this, a kanban drag looks like it
+   * snaps back to the original column and then jumps to the right one a
+   * second later, because the card doesn't actually move until the next
+   * full refresh comes back from the bd CLI / Dolt round trip.
+   */
+  const updateBeadStatus = useCallback((beadId: string, status: BeadStatus) => {
+    setBeads(prev => {
+      const updated = prev.map(b => b.id === beadId ? { ...b, status } : b);
+      setBeadsByStatus(groupBeadsByStatus(updated));
+      return updated;
+    });
+  }, []);
+
   // Initial load when project path changes
   useEffect(() => {
     hasLoadedRef.current = false;
@@ -213,5 +230,6 @@ export function useBeads(projectPath: string): UseBeadsResult {
     isLoading,
     error,
     refresh,
+    updateBeadStatus,
   };
 }

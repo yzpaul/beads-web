@@ -10,6 +10,7 @@
     "server:dev": "cd server && cargo run",
     "server:build": "cd server && cargo build --release",
     "dev:full": "concurrently \"npm run dev\" \"npm run server:dev\"",
+    "run-beads": "npm run dev:full",
     "prepare": "bash scripts/install-hooks.sh",
     "test": "vitest run",
     "test:watch": "vitest",

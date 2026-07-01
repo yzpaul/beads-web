@@ -1,5 +1,7 @@
 "use client";
 
+import { memo } from "react";
+
 import { FolderOpen, GitPullRequest, Link2, MessageSquare, Check, X, Clock } from "lucide-react";
 
 import { CopyableText } from "@/components/copyable-text";
@@ -146,7 +148,14 @@ function getStatusBadgeClasses(variant: StatusBadgeInfo['variant']): string {
   }
 }
 
-export function BeadCard({ bead, allBeads, ticketNumber, worktreeStatus, prStatus, isSelected = false, onSelect }: BeadCardProps) {
+/**
+ * Memoized: during a kanban drag, @dnd-kit/core's context updates on every
+ * pointer move and re-renders every useDraggable/useDroppable consumer in
+ * the tree. Without memo, all ~200+ cards re-render on every frame of a
+ * drag, causing visible lag. Props (bead, allBeads, onSelect) stay
+ * referentially stable while dragging, so memo bails out cheaply.
+ */
+function BeadCardComponent({ bead, allBeads, ticketNumber, worktreeStatus, prStatus, isSelected = false, onSelect }: BeadCardProps) {
   const { layout } = useTheme();
   const blocked = isBlocked(bead, allBeads);
   const commentCount = (bead.comments ?? []).length;
@@ -428,3 +437,5 @@ export function BeadCard({ bead, allBeads, ticketNumber, worktreeStatus, prStatu
     </div>
   );
 }
+
+export const BeadCard = memo(BeadCardComponent);

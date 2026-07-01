@@ -1,5 +1,6 @@
 "use client";
 
+import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { PackageOpen } from "lucide-react";
 
 import { BeadCard } from "@/components/bead-card";
@@ -100,6 +101,27 @@ function isEpic(bead: Bead): bead is Epic {
 }
 
 /**
+ * Wraps a bead/epic card to make it draggable for status updates via drag-and-drop.
+ * Drag id is the bead id; KanbanBoard resolves the drop target column back to a status.
+ * No transform is applied here — DragOverlay in KanbanBoard renders the moving preview,
+ * this wrapper only dims the original card while it's being dragged.
+ */
+function DraggableCard({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id });
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      className={cn("touch-none", isDragging && "opacity-40")}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
  * Reusable Kanban column component with header, count badge, and scrollable bead list
  * Renders EpicCard for epics and BeadCard for standalone tasks
  */
@@ -116,6 +138,8 @@ export function KanbanColumn({
   projectPath,
   onUpdate,
 }: KanbanColumnProps) {
+  const { setNodeRef: setDropRef, isOver } = useDroppable({ id: status });
+
   return (
     <div
       className={cn(
@@ -138,37 +162,45 @@ export function KanbanColumn({
         </Badge>
       </div>
 
-      {/* Scrollable Bead List */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-3">
+      {/* Scrollable Bead List — also the drop target for this status */}
+      <div
+        ref={setDropRef}
+        className={cn(
+          "flex-1 min-h-0 overflow-y-auto p-3 transition-colors rounded-sm",
+          isOver && "bg-info/5 ring-2 ring-inset ring-info/30"
+        )}
+      >
         <div className="space-y-3">
           {beads.map((bead) => {
             // Render EpicCard for epics, BeadCard for standalone tasks
             if (isEpic(bead)) {
               return (
-                <EpicCard
-                  key={bead.id}
-                  epic={bead}
-                  allBeads={allBeads}
-                  ticketNumber={ticketNumbers?.get(bead.id)}
-                  isSelected={selectedBeadId === bead.id}
-                  onSelect={onSelectBead}
-                  onChildClick={onChildClick ?? onSelectBead}
-                  onNavigateToDependency={onNavigateToDependency}
-                  projectPath={projectPath}
-                  onUpdate={onUpdate}
-                />
+                <DraggableCard key={bead.id} id={bead.id}>
+                  <EpicCard
+                    epic={bead}
+                    allBeads={allBeads}
+                    ticketNumber={ticketNumbers?.get(bead.id)}
+                    isSelected={selectedBeadId === bead.id}
+                    onSelect={onSelectBead}
+                    onChildClick={onChildClick ?? onSelectBead}
+                    onNavigateToDependency={onNavigateToDependency}
+                    projectPath={projectPath}
+                    onUpdate={onUpdate}
+                  />
+                </DraggableCard>
               );
             }
 
             return (
-              <BeadCard
-                key={bead.id}
-                bead={bead}
-                allBeads={allBeads}
-                ticketNumber={ticketNumbers?.get(bead.id)}
-                isSelected={selectedBeadId === bead.id}
-                onSelect={onSelectBead}
-              />
+              <DraggableCard key={bead.id} id={bead.id}>
+                <BeadCard
+                  bead={bead}
+                  allBeads={allBeads}
+                  ticketNumber={ticketNumbers?.get(bead.id)}
+                  isSelected={selectedBeadId === bead.id}
+                  onSelect={onSelectBead}
+                />
+              </DraggableCard>
             );
           })}
           {beads.length === 0 && (

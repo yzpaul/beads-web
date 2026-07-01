@@ -21,7 +21,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import "highlight.js/styles/github-dark.css";
 
-const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3008';
+// Default to the page's own origin so this works for non-localhost clients too
+const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL
+  || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3008');
 
 export interface DesignDocViewerProps {
   /** Path to design doc (e.g., ".designs/{EPIC_ID}.md") */

@@ -3,7 +3,9 @@
  * Shared functions for fetching and processing design documents
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3008';
+// Default to the page's own origin so this works for non-localhost clients too
+const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL
+  || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3008');
 
 /**
  * Fetch design doc content from the backend API
