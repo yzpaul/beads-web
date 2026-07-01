@@ -2,7 +2,12 @@
 //!
 //! Provides endpoints for reading beads data.
 //! Supports two data sources:
-//! - **Dolt** (preferred): reads via `bd list --json` + `bd sql` CLI commands
+//! - **Dolt** (preferred): reads issue metadata via `bd list --json`, then merges in
+//!   comments by parsing `.beads/issues.jsonl` (which already embeds each issue's
+//!   comments) instead of shelling out per-issue — `bd sql` (a single bulk query)
+//!   isn't supported in embedded mode, and per-issue `bd comments <id>` subprocesses
+//!   serialize against embedded Dolt's single-writer lock, so N issues means N
+//!   sequential ~0.5s subprocess calls (a ~40s timeout storm for 80 issues)
 //! - **JSONL** (fallback): reads from `.beads/issues.jsonl` if bd CLI is unavailable
 
 use axum::{
@@ -353,8 +358,9 @@ fn upsert_counts_cache(
 
 /// Reads beads from the Dolt database via `bd` CLI.
 ///
-/// Calls `bd list --json` for issues and `bd sql` for comments,
-/// then merges them together.
+/// Calls `bd list --json` for issue metadata, then merges in comments parsed
+/// from `.beads/issues.jsonl` (bd keeps this export in sync on every write —
+/// see the JSONL fallback tier below, which relies on the same guarantee).
 async fn read_beads_from_cli(project_path: &Path, updated_after: Option<&str>) -> Result<Vec<Bead>, String> {
     // Get beads, optionally filtered by updated_after
     let list_output = if let Some(since) = updated_after {
@@ -374,50 +380,67 @@ async fn read_beads_from_cli(project_path: &Path, updated_after: Option<&str>) -
     let mut beads: Vec<Bead> = serde_json::from_str(json_str)
         .map_err(|e| format!("Failed to parse bd list output: {}", e))?;
 
-    // Get all comments
-    let comments_output = run_bd(
-        &["sql", "SELECT * FROM comments ORDER BY issue_id, id", "--json"],
-        project_path,
-    )
-    .await;
+    // Merge in comments from the JSONL export rather than shelling out to `bd
+    // comments <id>` per issue — that serializes against embedded Dolt's
+    // single-writer lock (~2 calls/sec regardless of concurrency), so a
+    // project with dozens of issues would blow well past any client timeout.
+    let issues_path = resolve_issues_path(project_path);
+    match read_beads_from_jsonl(&issues_path) {
+        Ok(jsonl_beads) => {
+            let mut jsonl_by_id: HashMap<String, Bead> =
+                jsonl_beads.into_iter().map(|b| (b.id.clone(), b)).collect();
 
-    if let Ok(output) = comments_output {
-        let json_str = extract_json_array(&output).unwrap_or("[]");
-        if let Ok(comments) = serde_json::from_str::<Vec<Comment>>(json_str) {
-            // Group comments by issue_id
-            let mut comments_map: HashMap<String, Vec<Comment>> = HashMap::new();
-            for comment in comments {
-                comments_map
-                    .entry(comment.issue_id.clone())
-                    .or_default()
-                    .push(comment);
-            }
-            // Merge into beads
             for bead in &mut beads {
-                if let Some(bead_comments) = comments_map.remove(&bead.id) {
-                    bead.comments = Some(bead_comments);
+                if let Some(jsonl_bead) = jsonl_by_id.remove(&bead.id) {
+                    bead.comments = jsonl_bead.comments;
                 }
             }
-        } else {
-            tracing::warn!("Failed to parse comments from bd sql, continuing without comments");
+
+            // `bd comment add` doesn't bump the issue's own `updated_at`, so an
+            // incremental `bd list --updated-after` never returns an issue for
+            // a comment-only change — the file watcher fires, but the poll
+            // that follows comes back empty and the new comment never shows up
+            // until the next full reload. Whatever's left in jsonl_by_id here
+            // is exactly "issues bd list --updated-after didn't return"; pull
+            // in any of those whose newest comment is more recent than the
+            // last poll.
+            if let Some(after) = updated_after {
+                for (_, jsonl_bead) in jsonl_by_id {
+                    if bead_has_comment_after(&jsonl_bead, after) {
+                        beads.push(jsonl_bead);
+                    }
+                }
+            }
         }
-    } else {
-        tracing::warn!("Failed to fetch comments via bd sql, continuing without comments");
+        Err(e) => {
+            tracing::warn!("Failed to read comments from {}: {}, continuing without comments", issues_path.display(), e);
+        }
     }
 
     Ok(beads)
+}
+
+/// `true` if any of the bead's comments were created after `after` (an ISO
+/// 8601 timestamp string). Relies on `created_at` being fixed-width UTC
+/// (e.g. `2026-07-01T15:17:18Z`), which sorts correctly with plain string
+/// comparison.
+fn bead_has_comment_after(bead: &Bead, after: &str) -> bool {
+    bead.comments
+        .as_ref()
+        .is_some_and(|comments| comments.iter().any(|c| c.created_at.as_str() > after))
 }
 
 /// Returns `true` if a JSONL line is a non-issue record that should be skipped.
 ///
 /// Newer `bd` versions append service records (e.g. `bd remember` memories)
 /// into `issues.jsonl`, marked with a `_type` field and lacking an `id`.
-/// These must not be parsed as beads. We treat the presence of a top-level
-/// `_type` key as the discriminator so future record types are skipped too.
+/// These must not be parsed as beads. `_type` alone isn't a safe discriminator
+/// any more — bd 1.0.4+ tags real issue records with `"_type":"issue"` too —
+/// so a record is only skipped when it has `_type` but no `id`.
 fn is_non_issue_record(line: &str) -> bool {
     matches!(
         serde_json::from_str::<serde_json::Value>(line),
-        Ok(serde_json::Value::Object(ref obj)) if obj.contains_key("_type")
+        Ok(serde_json::Value::Object(ref obj)) if obj.contains_key("_type") && !obj.contains_key("id")
     )
 }
 
@@ -1183,6 +1206,16 @@ mod tests {
     }
 
     #[test]
+    fn test_is_non_issue_record_issue_with_type_tag() {
+        // bd 1.0.4+ tags real issue records with `"_type":"issue"` too, so
+        // `_type` presence alone can't discriminate — only `_type` + no `id`
+        // means "skip this".
+        assert!(!is_non_issue_record(
+            r#"{"_type":"issue","id":"x-1","title":"T","status":"open"}"#
+        ));
+    }
+
+    #[test]
     fn test_parse_bead() {
         let json = r#"{"id":"test-123","title":"Test Bead","status":"open","priority":2}"#;
         let bead: Bead = serde_json::from_str(json).unwrap();
@@ -1198,6 +1231,27 @@ mod tests {
         let bead: Bead = serde_json::from_str(json).unwrap();
         assert_eq!(bead.comments.as_ref().unwrap().len(), 1);
         assert_eq!(bead.comments.as_ref().unwrap()[0].text, "A comment");
+    }
+
+    #[test]
+    fn test_bead_has_comment_after_true_for_newer_comment() {
+        let json = r#"{"id":"x-1","title":"T","status":"open","comments":[{"id":1,"issue_id":"x-1","author":"a","text":"c","created_at":"2026-07-01T16:52:43Z"}]}"#;
+        let bead: Bead = serde_json::from_str(json).unwrap();
+        assert!(bead_has_comment_after(&bead, "2026-07-01T15:17:18Z"));
+    }
+
+    #[test]
+    fn test_bead_has_comment_after_false_for_older_comment() {
+        let json = r#"{"id":"x-1","title":"T","status":"open","comments":[{"id":1,"issue_id":"x-1","author":"a","text":"c","created_at":"2026-06-01T00:00:00Z"}]}"#;
+        let bead: Bead = serde_json::from_str(json).unwrap();
+        assert!(!bead_has_comment_after(&bead, "2026-07-01T15:17:18Z"));
+    }
+
+    #[test]
+    fn test_bead_has_comment_after_false_with_no_comments() {
+        let json = r#"{"id":"x-1","title":"T","status":"open"}"#;
+        let bead: Bead = serde_json::from_str(json).unwrap();
+        assert!(!bead_has_comment_after(&bead, "2026-07-01T15:17:18Z"));
     }
 
     #[test]
